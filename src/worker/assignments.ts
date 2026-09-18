@@ -1236,10 +1236,10 @@ assignmentRoutes.post("/grader/jobs/:id/infra-failure", zValidator("json", grade
     c.env.DB.prepare("UPDATE submissions SET status='queued' WHERE id=(SELECT submission_id FROM grading_jobs WHERE id=?)").bind(id),
     c.env.DB.prepare(
       `INSERT INTO submission_stage_events(submission_id,grading_job_id,stage,outcome,public_summary,created_at)
-       SELECT submission_id,id,'infrastructure','waiting','Проверка ожидает исправный grader и будет продолжена автоматически',?
+       SELECT submission_id,id,'infrastructure','retrying','Проверка ожидает исправный grader и будет продолжена автоматически',?
        FROM grading_jobs WHERE id=? AND NOT EXISTS(
          SELECT 1 FROM submission_stage_events event
-         WHERE event.grading_job_id=grading_jobs.id AND event.stage='infrastructure' AND event.outcome='waiting'
+         WHERE event.grading_job_id=grading_jobs.id AND event.stage='infrastructure' AND event.outcome='retrying'
        )`,
     ).bind(timestamp, id),
   ]);
