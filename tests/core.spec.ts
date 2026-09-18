@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { normalizeDisplay, normalizeText, shuffle } from "../src/worker/lib";
 import { B2MediaStorage } from "../src/worker/media-storage";
 import { hashPassword, verifyPassword } from "../src/worker/auth";
-import { achievementNominationStatus, canonicalRepository, enforceCriticalGate } from "../src/worker/assignments";
+import { achievementNominationStatus, canonicalRepository, enforceCriticalGate, graderInfrastructureRetryDelaySeconds } from "../src/worker/assignments";
 import {
   questionEditorForm,
   questionEditorPayload,
@@ -32,6 +32,13 @@ it("requires teacher approval for LLM achievements and auto-awards objective ach
   expect(achievementNominationStatus("runtime:limits")).toBe("accepted");
   expect(achievementNominationStatus("pipeline:custom")).toBe("accepted");
   expect(achievementNominationStatus("platform:submission.finalized")).toBe("accepted");
+});
+it("backs off infrastructure retries forever without exceeding one hour", () => {
+  expect(graderInfrastructureRetryDelaySeconds(1)).toBe(15);
+  expect(graderInfrastructureRetryDelaySeconds(2)).toBe(30);
+  expect(graderInfrastructureRetryDelaySeconds(4)).toBe(120);
+  expect(graderInfrastructureRetryDelaySeconds(9)).toBe(3600);
+  expect(graderInfrastructureRetryDelaySeconds(1000)).toBe(3600);
 });
 let studentIp = 20;
 async function call(path: string, init: RequestInit = {}) {

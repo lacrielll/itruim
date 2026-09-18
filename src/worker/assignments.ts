@@ -53,6 +53,11 @@ export function achievementNominationStatus(source: string): "accepted" | "pendi
   return source.split(":", 1)[0] === "llm" ? "pending_teacher" : "accepted";
 }
 
+export function graderInfrastructureRetryDelaySeconds(retryCount: number): number {
+  const exponent = Math.min(Math.max(Math.trunc(retryCount) - 1, 0), 8);
+  return Math.min(3600, 15 * 2 ** exponent);
+}
+
 async function adminMutation(c: any) { const s = await requireAdmin(c); await verifyCsrf(c, s); return s; }
 async function studentMutation(c: any) { const s = await requireStudent(c); await verifyCsrf(c, s); return s; }
 async function teacherMutation(c: any) { const s = await requireTeacher(c); await verifyCsrf(c, s); return s; }
@@ -1227,17 +1232,21 @@ assignmentRoutes.post("/grader/jobs/:id/result", zValidator("json", gradingResul
 assignmentRoutes.post("/grader/jobs/:id/infra-failure", zValidator("json", graderInfraFailureSchema), async (c) => {
   const worker = await requireGrader(c), id = Number(c.req.param("id")); const lease = await verifyLease(c, id, worker.id); const timestamp = now();
   const job = await c.env.DB.prepare("SELECT infra_retry_count FROM grading_jobs WHERE id=?").bind(id).first<{ infra_retry_count: number }>();
-  const retryCount = (job?.infra_retry_count ?? 0) + 1, retrying = retryCount <= 3;
-  const retryAt = retrying ? timestamp + Math.min(300, 15 * 2 ** (retryCount - 1)) : null;
+  const retryCount = (job?.infra_retry_count ?? 0) + 1;
+  const retryAt = timestamp + graderInfrastructureRetryDelaySeconds(retryCount);
   const results = await c.env.DB.batch([
-    c.env.DB.prepare("UPDATE grading_jobs SET status=?,current_stage='infrastructure_retry',public_stage_message=?,infra_retry_count=?,next_retry_at=?,infra_error_code=?,finished_at=?,worker_id=NULL,lease_token_hash=NULL,lease_expires_at=NULL,heartbeat_at=NULL WHERE id=? AND worker_id=? AND status='running' AND lease_token_hash=? AND lease_expires_at>?")
-      .bind(retrying ? "queued" : "infra_failed", retrying ? "Проверка временно прервана и будет повторена автоматически" : "Проверка ожидает восстановления grader", retryCount, retryAt, c.req.valid("json").code, timestamp, id, worker.id, lease.tokenHash, timestamp),
+    c.env.DB.prepare("UPDATE grading_jobs SET status='queued',current_stage='infrastructure_retry',public_stage_message='Проверка ожидает исправный grader и будет продолжена автоматически',infra_retry_count=?,next_retry_at=?,infra_error_code=?,finished_at=?,worker_id=NULL,lease_token_hash=NULL,lease_expires_at=NULL,heartbeat_at=NULL WHERE id=? AND worker_id=? AND status='running' AND lease_token_hash=? AND lease_expires_at>?")
+      .bind(retryCount, retryAt, c.req.valid("json").code, timestamp, id, worker.id, lease.tokenHash, timestamp),
     c.env.DB.prepare("UPDATE submissions SET status='queued' WHERE id=(SELECT submission_id FROM grading_jobs WHERE id=?)").bind(id),
     c.env.DB.prepare(
       `INSERT INTO submission_stage_events(submission_id,grading_job_id,stage,outcome,public_summary,created_at)
-       SELECT submission_id,id,'infrastructure',?,?,? FROM grading_jobs WHERE id=?`,
-    ).bind(retrying ? "retrying" : "failed", retrying ? "Проверка временно прервана и будет повторена автоматически" : "Проверка ожидает восстановления grader", timestamp, id),
+       SELECT submission_id,id,'infrastructure','waiting','Проверка ожидает исправный grader и будет продолжена автоматически',?
+       FROM grading_jobs WHERE id=? AND NOT EXISTS(
+         SELECT 1 FROM submission_stage_events event
+         WHERE event.grading_job_id=grading_jobs.id AND event.stage='infrastructure' AND event.outcome='waiting'
+       )`,
+    ).bind(timestamp, id),
   ]);
   if (!results[0]?.meta.changes) throw new ApiError(409, "LEASE_INVALID", "Lease изменён или истёк");
-  return c.json({ accepted: true, retrying, next_retry_at: retryAt });
+  return c.json({ accepted: true, retrying: true, next_retry_at: retryAt });
 });
