@@ -568,7 +568,12 @@ describe("coding assignment control plane", () => {
       body: JSON.stringify({ stage: "contracts", message: "Проверяется структура контрактов и функций" }),
     })).status).toBe(200);
     const activeHistory: any = await (await call("/api/student/submissions", { headers: { Cookie: s1.cookie } })).json();
-    expect(activeHistory.items.find((item: any) => item.id === firstBody.id).student_status).toBe("checking_contracts");
+    const activeSubmission = activeHistory.items.find((item: any) => item.id === firstBody.id);
+    expect(activeSubmission.student_status).toBe("processing");
+    expect(activeSubmission).not.toHaveProperty("current_stage");
+    expect(activeSubmission).not.toHaveProperty("public_stage_message");
+    expect(activeSubmission).not.toHaveProperty("infra_retry_count");
+    expect(activeSubmission).not.toHaveProperty("next_retry_at");
     expect((await call(`/api/grader/jobs/${job.job_id}/heartbeat`, {
       method: "POST", headers: { Authorization: `Bearer ${worker.token}`, "X-Grader-Lease": "wrong", "Content-Type": "application/json" }, body: JSON.stringify({ lease_seconds: 120 }),
     })).status).toBe(409);

@@ -878,11 +878,8 @@ function StudentProfile() {
 }
 
 const submissionLabels: Record<string, string> = {
-  queued: "Ожидает свободный grader",
-  checking_repository: "Проверяется репозиторий",
-  checking_contracts: "Проверяются контракты",
-  running_tests: "Выполняются автоматические тесты",
-  retrying_infrastructure: "Проверка будет повторена автоматически",
+  queued: "Ожидает проверки",
+  processing: "Проверяется",
   blocked_duplicate_repo: "Требуется решение преподавателя",
   deterministic_failed: "Автоматическая проверка не пройдена",
   awaiting_answers: "Ожидаются ответы на вопросы",
@@ -1001,7 +998,6 @@ function SubmissionCard({ submission: s }: { submission: any }) {
       <a href={s.repo_url} target="_blank" rel="noreferrer">
         {s.repo_url}
       </a>
-      {s.public_stage_message && <p>{s.public_stage_message}</p>}
       {s.public_summary && <p className="submission-summary">{s.public_summary}</p>}
       {awaiting && (
         <div className="clarification-box">

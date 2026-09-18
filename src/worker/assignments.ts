@@ -533,12 +533,12 @@ assignmentRoutes.get("/student/submissions", async (c) => {
     ).bind(row.id).first<any>();
     let studentStatus = row.status;
     if (row.deterministic_status === "failed") studentStatus = "deterministic_failed";
-    else if (row.next_retry_at) studentStatus = "retrying_infrastructure";
-    else if (row.status === "grading") studentStatus = row.current_stage === "repository" ? "checking_repository"
-      : row.current_stage === "contracts" ? "checking_contracts" : "running_tests";
+    else if (["queued", "grading"].includes(row.status)) studentStatus = "processing";
     const publicResult = row.result_json ? JSON.parse(row.result_json) : null;
-    items.push({ ...row, student_status: studentStatus, public_diagnostics: JSON.parse(row.public_diagnostics_json ?? "[]"),
-      checks: publicResult?.checks ?? [], public_diagnostics_json: undefined, result_json: undefined, clarification, stages: events.results });
+    const { current_stage: _currentStage, public_stage_message: _stageMessage, infra_retry_count: _retryCount, next_retry_at: _nextRetryAt, ...studentRow } = row;
+    items.push({ ...studentRow, student_status: studentStatus, public_diagnostics: JSON.parse(row.public_diagnostics_json ?? "[]"),
+      checks: publicResult?.checks ?? [], public_diagnostics_json: undefined, result_json: undefined, clarification,
+      stages: events.results.filter((event: any) => event.stage !== "infrastructure") });
   }
   return c.json({ items, server_now: now() });
 });
