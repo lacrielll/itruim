@@ -1,0 +1,18 @@
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD_HASH=pbkdf2-sha256$100000$BASE64_SALT$BASE64_HASH
+CSRF_SECRET=replace-with-at-least-32-random-bytes
+RATE_LIMIT_PEPPER=replace-with-at-least-32-random-bytes
+B2_ENDPOINT=https://s3.your-region.backblazeb2.com
+B2_REGION=your-region
+B2_BUCKET=quiz-achievements
+B2_KEY_ID=replace-with-restricted-application-key-id
+B2_APPLICATION_KEY=replace-with-restricted-application-key
+LLM_ANSWER_DEADLINE_SECONDS=300
+LOCAL_DEV_UPLOADS=true
+# Optional HTTPS bridge that delivers JSON to email/Telegram. Keep unset to use inbox only.
+NOTIFICATION_WEBHOOK_URL=https://notifications.example.internal/events
+NOTIFICATION_WEBHOOK_SECRET=replace-with-random-bearer-secret
+TELEGRAM_BOT_USERNAME=your_bot_username
+TELEGRAM_BOT_TOKEN=replace-with-botfather-token
+TELEGRAM_WEBHOOK_SECRET=replace-with-random-webhook-secret
+APP_BASE_URL=http://localhost:5173
