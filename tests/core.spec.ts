@@ -633,7 +633,7 @@ describe("coding assignment control plane", () => {
     const graded = submissionHistory.items.find((item: any) => item.id === firstBody.id);
     expect(graded.student_status).toBe("awaiting_teacher_review");
     expect(graded.public_summary).toBe("Все обязательные тесты пройдены");
-    expect(graded.stages.map((stage: any) => stage.stage)).toContain("tests");
+    expect(graded).not.toHaveProperty("stages");
     const award = await env.DB.prepare("SELECT achievement_id,reason_code FROM assignment_achievement_awards WHERE submission_id=? AND achievement_id='assignment/lab-1/all-functions'").bind(firstBody.id).first<any>();
     expect(award).toMatchObject({ achievement_id: "assignment/lab-1/all-functions", reason_code: "all_required_functions_passed" });
     expect((await env.DB.prepare("SELECT count(*) count FROM assignment_achievement_awards WHERE submission_id=?").bind(firstBody.id).first<any>()).count).toBe(1);

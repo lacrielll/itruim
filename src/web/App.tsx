@@ -1012,16 +1012,6 @@ function SubmissionCard({ submission: s }: { submission: any }) {
           <ErrorBox error={answerError} />
         </div>
       )}
-      {!!s.stages?.length && (
-        <ol className="submission-timeline">
-          {s.stages.map((stage: any, index: number) => (
-            <li className={`stage-${stage.outcome}`} key={`${stage.stage}-${index}`}>
-              <span>{stage.public_summary}</span>
-              <small>{fmt(stage.created_at)}</small>
-            </li>
-          ))}
-        </ol>
-      )}
       {!!s.public_diagnostics?.length && (
         <div className="diagnostic-list">
           {s.public_diagnostics.map((d: any, index: number) => (

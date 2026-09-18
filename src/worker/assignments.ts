@@ -523,9 +523,6 @@ assignmentRoutes.get("/student/submissions", async (c) => {
   ).bind(s.studentId!).all<any>();
   const items = [];
   for (const row of rows.results) {
-    const events = await c.env.DB.prepare(
-      "SELECT stage,outcome,public_summary,created_at FROM submission_stage_events WHERE submission_id=? ORDER BY id",
-    ).bind(row.id).all();
     const clarification = await c.env.DB.prepare(
       `SELECT lc.id,lc.question_number,lc.question,lc.asked_at,lc.answer_deadline_at,lc.answered_at,lrs.state
        FROM llm_review_sessions lrs JOIN llm_clarifications lc ON lc.review_session_id=lrs.id
@@ -537,8 +534,7 @@ assignmentRoutes.get("/student/submissions", async (c) => {
     const publicResult = row.result_json ? JSON.parse(row.result_json) : null;
     const { current_stage: _currentStage, public_stage_message: _stageMessage, infra_retry_count: _retryCount, next_retry_at: _nextRetryAt, ...studentRow } = row;
     items.push({ ...studentRow, student_status: studentStatus, public_diagnostics: JSON.parse(row.public_diagnostics_json ?? "[]"),
-      checks: publicResult?.checks ?? [], public_diagnostics_json: undefined, result_json: undefined, clarification,
-      stages: events.results.filter((event: any) => event.stage !== "infrastructure") });
+      checks: publicResult?.checks ?? [], public_diagnostics_json: undefined, result_json: undefined, clarification });
   }
   return c.json({ items, server_now: now() });
 });
