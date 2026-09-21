@@ -664,10 +664,14 @@ td,
 }
 
 .achievement-spoiler { margin-top:14px; text-align:left; }
-.achievement-spoiler summary { width:max-content; max-width:100%; padding:7px 10px; border-radius:7px; color:transparent; background:repeating-linear-gradient(135deg,rgba(125,211,252,.42) 0 3px,rgba(37,99,235,.58) 3px 6px); cursor:pointer; user-select:none; list-style:none; }
+.achievement-spoiler summary { width:max-content; max-width:100%; padding:7px 10px; border-radius:7px; color:transparent; background:repeating-linear-gradient(135deg,rgba(125,211,252,.42) 0 3px,rgba(37,99,235,.58) 3px 6px); cursor:pointer; user-select:none; list-style:none; white-space:pre-wrap; }
 .achievement-spoiler summary::-webkit-details-marker { display:none; }
 .achievement-spoiler[open] summary { color:var(--text-secondary); background:rgba(56,189,248,.1); user-select:auto; }
-.achievement-spoiler p { margin:10px 0 0 !important; color:var(--text-secondary); white-space:pre-wrap; }
+
+.student-lab-score { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:14px 16px; border:1px solid color-mix(in srgb,var(--success) 42%,var(--line)); border-radius:12px; background:color-mix(in srgb,var(--success) 9%,var(--surface-elevated)); }
+.student-lab-score span { color:var(--text-secondary); font-weight:700; }
+.student-lab-score strong { color:#86efac; font-size:24px; line-height:1; }
+.student-lab-score strong small { color:var(--text-secondary); font-size:14px; }
 
 @media (prefers-reduced-motion: reduce) {
   .preview-dot {

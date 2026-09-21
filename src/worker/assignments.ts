@@ -58,6 +58,28 @@ export function graderInfrastructureRetryDelaySeconds(retryCount: number): numbe
   return Math.min(3600, 15 * 2 ** exponent);
 }
 
+const STUDENT_SAFE_GRADING_CODES = new Set([
+  "CONTRACT_DIRECTORY_MISSING", "CONTRACT_FILE_MISSING", "CONTRACT_TAMPERED",
+  "CONTRACT_SYMBOL_MISSING", "CONTRACT_SYMBOL_AMBIGUOUS", "CONTRACT_SIGNATURE_INVALID",
+  "CONTRACT_RETURN_TYPE_INVALID", "IMPORT_FAILED",
+  "SYMLINK_FORBIDDEN", "TOO_MANY_FILES", "FILE_TOO_LARGE", "FORBIDDEN_FILE_TYPE",
+  "REPOSITORY_TOO_LARGE", "REPOSITORY_UNAVAILABLE", "REPOSITORY_TIMEOUT", "COMMIT_NOT_FOUND",
+]);
+
+export function studentGradingView(input: { summary?: string | null; deterministicGate?: string | null; diagnostics?: any[]; checks?: any[] }) {
+  const diagnostics = Array.isArray(input.diagnostics)
+    ? input.diagnostics.filter((item) => STUDENT_SAFE_GRADING_CODES.has(String(item?.code)))
+    : [];
+  const checks = Array.isArray(input.checks) ? input.checks : [];
+  const hiddenFailure = input.deterministicGate === "failed"
+    && (checks.some((item) => item?.passed === false || item?.status === "failed") || diagnostics.length !== (input.diagnostics?.length ?? 0));
+  return {
+    summary: hiddenFailure ? "Автоматическая проверка не пройдена. Проверьте корректность решения и граничные случаи." : input.summary,
+    diagnostics,
+    checks: [],
+  };
+}
+
 async function adminMutation(c: any) { const s = await requireAdmin(c); await verifyCsrf(c, s); return s; }
 async function studentMutation(c: any) { const s = await requireStudent(c); await verifyCsrf(c, s); return s; }
 async function teacherMutation(c: any) { const s = await requireTeacher(c); await verifyCsrf(c, s); return s; }
@@ -532,9 +554,15 @@ assignmentRoutes.get("/student/submissions", async (c) => {
     if (row.deterministic_status === "failed") studentStatus = "deterministic_failed";
     else if (["queued", "grading"].includes(row.status)) studentStatus = "processing";
     const publicResult = row.result_json ? JSON.parse(row.result_json) : null;
+    const gradingView = studentGradingView({
+      summary: row.public_summary,
+      deterministicGate: row.deterministic_gate,
+      diagnostics: JSON.parse(row.public_diagnostics_json ?? "[]"),
+      checks: publicResult?.checks,
+    });
     const { current_stage: _currentStage, public_stage_message: _stageMessage, infra_retry_count: _retryCount, next_retry_at: _nextRetryAt, ...studentRow } = row;
-    items.push({ ...studentRow, student_status: studentStatus, public_diagnostics: JSON.parse(row.public_diagnostics_json ?? "[]"),
-      checks: publicResult?.checks ?? [], public_diagnostics_json: undefined, result_json: undefined, clarification });
+    items.push({ ...studentRow, public_summary: gradingView.summary, student_status: studentStatus, public_diagnostics: gradingView.diagnostics,
+      checks: gradingView.checks, public_diagnostics_json: undefined, result_json: undefined, clarification });
   }
   return c.json({ items, server_now: now() });
 });

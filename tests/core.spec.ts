@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { normalizeDisplay, normalizeText, shuffle } from "../src/worker/lib";
 import { B2MediaStorage } from "../src/worker/media-storage";
 import { hashPassword, verifyPassword } from "../src/worker/auth";
-import { achievementNominationStatus, canonicalRepository, enforceCriticalGate, graderInfrastructureRetryDelaySeconds } from "../src/worker/assignments";
+import { achievementNominationStatus, canonicalRepository, enforceCriticalGate, graderInfrastructureRetryDelaySeconds, studentGradingView } from "../src/worker/assignments";
 import {
   questionEditorForm,
   questionEditorPayload,
@@ -39,6 +39,20 @@ it("backs off infrastructure retries forever without exceeding one hour", () => 
   expect(graderInfrastructureRetryDelaySeconds(4)).toBe(120);
   expect(graderInfrastructureRetryDelaySeconds(9)).toBe(3600);
   expect(graderInfrastructureRetryDelaySeconds(1000)).toBe(3600);
+});
+it("does not expose hidden grader tests to students", () => {
+  const view = studentGradingView({
+    summary: "Пройдено функций: 17 из 18",
+    deterministicGate: "failed",
+    diagnostics: [
+      { code: "RUNTIME_EXCEPTION", title: "Тест функции count_vowels не пройден", message: "NotImplementedError", location: "python_basics.py", hint: "Проверьте граничные случаи" },
+      { code: "CONTRACT_FILE_MISSING", title: "Не найден контракт", message: "grader_contracts/python_basics.py" },
+    ],
+    checks: [{ id: "function:count_vowels", title: "count_vowels", status: "failed", passed: false }],
+  });
+  expect(view.summary).toBe("Автоматическая проверка не пройдена. Проверьте корректность решения и граничные случаи.");
+  expect(view.diagnostics).toEqual([{ code: "CONTRACT_FILE_MISSING", title: "Не найден контракт", message: "grader_contracts/python_basics.py" }]);
+  expect(view.checks).toEqual([]);
 });
 let studentIp = 20;
 async function call(path: string, init: RequestInit = {}) {

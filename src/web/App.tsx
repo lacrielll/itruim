@@ -98,6 +98,13 @@ function Notice({ children, kind = "info" }: { children: ReactNode; kind?: strin
 function ErrorBox({ error }: { error: string }) {
   return error ? <Notice kind="error">{error}</Notice> : null;
 }
+function LinkifiedText({ text }: { text: string }) {
+  return <>{text.split(/(https?:\/\/[^\s]+)/g).map((part, index) =>
+    /^https?:\/\//.test(part)
+      ? <a href={part} target="_blank" rel="noreferrer" key={`${part}-${index}`}>{part}</a>
+      : part,
+  )}</>;
+}
 function Toast({ message, kind = "success", onClose, timeout = 6000 }: { message: string; kind?: "success" | "error" | "info"; onClose: () => void; timeout?: number }) {
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -222,21 +229,20 @@ function Register() {
 }
 
 function BadgeShowcase({ badges }: { badges: any[] }) {
-  if (!badges.length) return <Notice>Здесь пока пусто. Медали за квизы и достижения за лабораторные появятся после первого завершённого задания.</Notice>;
+  if (!badges.length) return <Notice>Здесь пока пусто. Медали и достижения появятся после первого завершённого задания.</Notice>;
   const medals = badges.filter((badge) => badge.badge_kind !== "assignment");
   const achievements = badges.filter((badge) => badge.badge_kind === "assignment");
   return (
     <div className="reward-showcase">
       <section className="achievement-overview" aria-label="Сводка достижений">
         <div><strong>{badges.length}</strong><span>всего наград</span></div>
-        <div><strong>{achievements.length}</strong><span>достижений за лабораторные</span></div>
+        <div><strong>{achievements.length}</strong><span>достижений</span></div>
         <div><strong>{medals.length}</strong><span>медалей</span></div>
       </section>
-      {!!achievements.length && !!medals.length && <nav className="reward-sections" aria-label="Разделы наград"><a href="#achievements">За лабораторные</a><a href="#medals">За квизы</a></nav>}
+      {!!achievements.length && !!medals.length && <nav className="reward-sections" aria-label="Разделы наград"><a href="#achievements">Достижения</a><a href="#medals">Медали</a></nav>}
       {!!achievements.length && (
         <section className="achievement-shelf" id="achievements">
           <div className="reward-heading">
-            <p className="eyebrow">Лабораторные</p>
             <h2>Достижения</h2>
             <span>{achievements.length} разблокировано</span>
           </div>
@@ -256,7 +262,7 @@ function BadgeShowcase({ badges }: { badges: any[] }) {
                   <div className="steam-unlocked">Достижение получено</div>
                   <h3>{achievement.badge_title}</h3>
                   <p>{achievement.badge_description}</p>
-                  {achievement.unlock_hint && <details className="achievement-spoiler"><summary>Условие получения</summary><p>{achievement.unlock_hint}</p></details>}
+                  {achievement.unlock_hint && <AchievementCondition condition={achievement.unlock_hint} />}
                   <small>
                     {achievement.quiz_title} · {fmt(achievement.finalized_at)}
                   </small>
@@ -269,7 +275,7 @@ function BadgeShowcase({ badges }: { badges: any[] }) {
       {!!medals.length && (
         <section id="medals">
           <div className="reward-heading">
-            <h2>Медали за квизы</h2>
+            <h2>Медали</h2>
             <span>{medals.length} получено</span>
           </div>
           <div className="badge-wall">
@@ -674,7 +680,7 @@ function StudentProfile() {
                 <article className="assignment-card" key={lab.publication_id}>
                   <Link className="back-button" to="/profile/labs">← Вернуться к списку лабораторных</Link>
                   <h3>{lab.title}</h3>
-                  <p>{lab.description}</p>
+                  <p><LinkifiedText text={lab.description} /></p>
                   <small>
                     {lab.course_run_name}
                     {lab.due_at ? ` · до ${fmt(lab.due_at)}` : ""}
@@ -848,7 +854,7 @@ function StudentProfile() {
                 <div>
                   <p className="eyebrow">Личная коллекция</p>
                   <h2>Стена достижений</h2>
-                  <p className="muted">Достижения за лабораторные и медали за квизы собраны здесь.</p>
+                  <p className="muted">Достижения и медали собраны здесь.</p>
                 </div>
                 {profile.is_public && (
                   <a className="button secondary" href={`/p/${profile.share_token}`} target="_blank" rel="noreferrer">
@@ -995,6 +1001,12 @@ function SubmissionCard({ submission: s }: { submission: any }) {
         </div>
         <span className="status-pill">{submissionLabels[s.student_status] ?? s.student_status}</span>
       </div>
+      {s.status === "finalized" && s.final_score != null && (
+        <div className="student-lab-score" aria-label={`Итоговый балл: ${s.final_score} из 100`}>
+          <span>Итоговый балл</span>
+          <strong>{s.final_score}<small> / 100</small></strong>
+        </div>
+      )}
       <a href={s.repo_url} target="_blank" rel="noreferrer">
         {s.repo_url}
       </a>
@@ -1068,7 +1080,7 @@ function PublicProfile() {
       <section className="profile-head public-profile-head">
         <p className="eyebrow">ITRUIM</p>
         <h1>Коллекция достижений</h1>
-        <p className="muted">Медали за квизы и достижения за лабораторные курса.</p>
+        <p className="muted">Медали и достижения курса.</p>
       </section>
       <ErrorBox error={error} />
       {profile && <BadgeShowcase badges={profile.badges} />}
@@ -3218,14 +3230,14 @@ function AchievementEditor({ version, setVersion }: { version: any; setVersion: 
             </button>
           </>
         )}
-        <AchievementDraftPreview value={form} trigger={`От ${Number(form.min_correct_answers) || 0} правильных ответов`} />
+        <AchievementDraftPreview value={form} kind="medal" />
         <button>{editing ? "Сохранить" : "Добавить"}</button>
       </form>
     </section>
   );
 }
 
-function AchievementDraftPreview({ value, trigger }: { value: any; trigger: string }) {
+function AchievementDraftPreview({ value, trigger = "", kind = "achievement" }: { value: any; trigger?: string; kind?: "achievement" | "medal" }) {
   const theme = value.theme || "default";
   const accent = value.accent_color || "#38bdf8";
   return (
@@ -3235,18 +3247,22 @@ function AchievementDraftPreview({ value, trigger }: { value: any; trigger: stri
         Предпросмотр для студента
       </div>
       <div className={`achievement achievement-preview ${theme}`} data-theme={theme} style={{ "--achievement-accent": accent } as CSSProperties}>
-        <p className="eyebrow">Достижение</p>
+        <p className="eyebrow">{kind === "medal" ? "Медаль" : "Достижение"}</p>
         {value.image_key && <img src={`/media/${value.image_key}`} alt="" />}
         <div className="emoji" aria-hidden="true">
           {value.emoji || "✦"}
         </div>
         <h1>{value.title?.trim() || "Название награды"}</h1>
         <p>{value.description?.trim() || "Описание награды появится здесь."}</p>
-        {trigger?.trim() && <details className="achievement-spoiler"><summary>Условие получения</summary><p>{trigger}</p></details>}
+        {kind === "achievement" && trigger.trim() && <AchievementCondition condition={trigger} />}
       </div>
       <small>Карточка обновляется сразу, сохранять черновик не нужно.</small>
     </aside>
   );
+}
+
+function AchievementCondition({ condition }: { condition: string }) {
+  return <details className="achievement-spoiler"><summary>{condition}</summary></details>;
 }
 
 function SpecialAchievementEditor({ kind, version, setVersion }: { kind: "double-failure" | "retry-success"; version: any; setVersion: (v: any) => void }) {
@@ -3362,7 +3378,7 @@ function SpecialAchievementEditor({ kind, version, setVersion }: { kind: "double
             </button>
           </div>
         )}
-        <AchievementDraftPreview value={form} trigger={isFailure ? "Обе попытки неудачны" : "Успех со второй попытки"} />
+        <AchievementDraftPreview value={form} kind="medal" />
         <button>{existing ? "Сохранить" : "Настроить медаль"}</button>
       </form>
     </section>
