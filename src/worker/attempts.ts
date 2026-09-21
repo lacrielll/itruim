@@ -457,12 +457,14 @@ export async function resultPayload(db: D1Database, a: Attempt) {
       !!v?.failure_barrier_enabled &&
       a.correct_answers! < v!.success_barrier_correct_answers;
     const timestamp = now();
+    const opensAt = publication ? publication.opens_at : quiz?.opens_at;
+    const deadlineAt = publication ? publication.start_deadline_at : quiz?.start_deadline_at;
     available =
       eligible &&
       !!quiz?.published_version_id &&
       (!publication || !!publication.is_active) &&
-      (!(publication?.opens_at ?? quiz.opens_at) || timestamp >= (publication?.opens_at ?? quiz.opens_at)!) &&
-      (!(publication?.start_deadline_at ?? quiz.start_deadline_at) || timestamp < (publication?.start_deadline_at ?? quiz.start_deadline_at)!) &&
+      (opensAt == null || timestamp >= opensAt) &&
+      (deadlineAt == null || timestamp < deadlineAt) &&
       !(await db
         .prepare(
           "SELECT 1 FROM quiz_attempts WHERE quiz_id=? AND student_id=? AND attempt_no=2",
@@ -842,6 +844,10 @@ attemptRoutes.post("/student/attempts/:id/retry", async (c) => {
   )
     .bind(first.id, first.quiz_id)
     .first<any>();
+  const publication = first.quiz_publication_id
+    ? await c.env.DB.prepare("SELECT * FROM quiz_publications WHERE id=?")
+        .bind(first.quiz_publication_id).first<any>()
+    : undefined;
   try {
     const a = await createAttempt(
       c.env.DB,
@@ -849,6 +855,7 @@ attemptRoutes.post("/student/attempts/:id/retry", async (c) => {
       s.studentId!,
       2,
       first.quiz_version_id,
+      publication,
     );
     return c.json(await hydrate(c.env.DB, a), 201);
   } catch (error) {

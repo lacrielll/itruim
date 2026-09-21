@@ -927,6 +927,37 @@ describe("availability, attempts, grading and retry", () => {
     expect(count?.n).toBe(1);
   });
 
+  it("uses the group publication window instead of the legacy quiz window for retry", async () => {
+    const s = await student("Повтор Публикации Студент");
+    const t = Math.floor(Date.now() / 1000), suffix = crypto.randomUUID().slice(0, 8);
+    const ids = await seedQuiz(`publication-retry-${suffix}`, { opens: null, deadline: t - 1 }, true);
+    const studentRow = await env.DB.prepare("SELECT id FROM students WHERE student_code=?").bind(s.code).first<{ id: string }>();
+    const runId = crypto.randomUUID(), groupId = crypto.randomUUID(), publicationId = crypto.randomUUID();
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO course_runs(id,name,created_at,updated_at) VALUES(?,?,?,?)").bind(runId, `Retry ${suffix}`, t, t),
+      env.DB.prepare("INSERT INTO groups(id,course_run_id,name,kind,join_code,created_at,updated_at) VALUES(?,?,?,'lecture',?,?,?)").bind(groupId, runId, "Поток", `R${suffix}`, t, t),
+      env.DB.prepare("INSERT INTO group_memberships(id,student_id,group_id,created_at,created_by_kind) VALUES(?,?,?,?,'admin')").bind(crypto.randomUUID(), studentRow!.id, groupId, t),
+      env.DB.prepare("INSERT INTO quiz_publications(id,quiz_id,quiz_version_id,course_run_id,target_all_course_run,opens_at,start_deadline_at,is_active,created_at,updated_at) VALUES(?,?,?,?,1,NULL,?,1,?,?)")
+        .bind(publicationId, ids.qid, ids.vid, runId, t + 60, t, t),
+    ]);
+    const startedResponse = await call(`/api/student/quizzes/publication-retry-${suffix}/attempts`, {
+      method: "POST", headers: authHeaders(s, false),
+    });
+    expect(startedResponse.status).toBe(201);
+    const started: any = await startedResponse.json();
+    const failedResponse = await call(`/api/student/attempts/${started.attempt.id}/submit`, {
+      method: "POST", headers: authHeaders(s),
+      body: JSON.stringify({ answers: { [ids.question]: { type: "SINGLE", optionId: ids.wrong } } }),
+    });
+    const failed: any = await failedResponse.json();
+    expect(failed.result.retry_available).toBe(true);
+    const retry = await call(`/api/student/attempts/${started.attempt.id}/retry`, {
+      method: "POST", headers: authHeaders(s, false),
+    });
+    expect(retry.status).toBe(201);
+    expect(((await retry.json()) as any).attempt.attempt_no).toBe(2);
+  });
+
   it("awards the dedicated achievement only after a second failure", async () => {
     const s = await student("Двойной Провал Студент");
     const ids = await seedQuiz(
