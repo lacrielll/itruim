@@ -11,10 +11,56 @@ import {
 } from "../shared/contracts";
 import type { Bindings, Variables } from "./env";
 import { hashPassword, requireAdmin, requireStudent, requireTeacher } from "./auth";
-import { ApiError, consumeRate, normalizeCode, now, slugify, studentCode, uuid, verifyCsrf } from "./lib";
+import { ApiError, consumeRate, createSession, csrfToken, normalizeCode, normalizeDisplay, normalizeText, now, randomToken, sha256, slugify, studentCode, uuid, verifyCsrf } from "./lib";
 
 type AppEnv = { Bindings: Bindings; Variables: Variables };
 export const groupRoutes = new Hono<AppEnv>();
+
+const inviteTokenSchema = z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/) }).strict();
+
+async function activeRegistrationInvite(db: D1Database, token: string) {
+  return db.prepare(
+    `SELECT i.id,i.group_id,g.name group_name,g.kind,cr.name course_run_name
+     FROM group_registration_invites i JOIN groups g ON g.id=i.group_id
+     JOIN course_runs cr ON cr.id=g.course_run_id
+     WHERE i.token_hash=? AND i.is_active=1 AND i.revoked_at IS NULL`,
+  ).bind(await sha256(token)).first<any>();
+}
+
+groupRoutes.get("/public/group-registration-invites/:token", zValidator("param", inviteTokenSchema), async (c) => {
+  const invite = await activeRegistrationInvite(c.env.DB, c.req.param("token"));
+  if (!invite) throw new ApiError(404, "INVITE_NOT_FOUND", "Ссылка регистрации недействительна или отозвана");
+  return c.json({ group_name: invite.group_name, group_kind: invite.kind, course_run_name: invite.course_run_name });
+});
+
+groupRoutes.post("/public/group-registration-invites/:token/register", zValidator("param", inviteTokenSchema), zValidator("json", z.object({ fio: z.string().trim().min(3).max(240) }).strict()), async (c) => {
+  const token = c.req.param("token"), tokenHash = await sha256(token), invite = await activeRegistrationInvite(c.env.DB, token);
+  if (!invite) throw new ApiError(404, "INVITE_NOT_FOUND", "Ссылка регистрации недействительна или отозвана");
+  const display = normalizeDisplay(c.req.valid("json").fio), normalized = normalizeText(display);
+  const ip = c.req.header("CF-Connecting-IP") ?? c.req.header("X-Forwarded-For")?.split(",")[0]?.trim() ?? "local";
+  await consumeRate(c, "invite-register-ip", ip, 12, 3600);
+  await consumeRate(c, "invite-register-fio", normalized, 5, 3600);
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const id = uuid(), code = studentCode(), timestamp = now();
+    const rows = await c.env.DB.batch([
+      c.env.DB.prepare("INSERT INTO students(id,student_code,fio_display,fio_normalized,created_at) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING").bind(id, code, display, normalized, timestamp),
+      c.env.DB.prepare("SELECT id,student_code,fio_display FROM students WHERE fio_normalized=?").bind(normalized),
+    ]);
+    const student = rows[1]?.results?.[0] as { id: string; student_code: string; fio_display: string } | undefined;
+    if (!student) continue;
+    const membership = await c.env.DB.prepare(
+      `INSERT INTO group_memberships(id,student_id,group_id,created_at,created_by_kind,created_by_id)
+       SELECT ?,?,i.group_id,?,'admin',i.id FROM group_registration_invites i
+       WHERE i.token_hash=? AND i.is_active=1 AND i.revoked_at IS NULL
+       ON CONFLICT(student_id,group_id) DO NOTHING`,
+    ).bind(uuid(), student.id, timestamp, tokenHash).run();
+    const member = membership.meta.changes > 0 || await c.env.DB.prepare("SELECT 1 FROM group_memberships WHERE student_id=? AND group_id=?").bind(student.id, invite.group_id).first();
+    if (!member) throw new ApiError(409, "INVITE_REVOKED", "Ссылка регистрации была отозвана");
+    const session = await createSession(c, "student", student.id);
+    return c.json({ student_code: student.student_code, fio_display: student.fio_display, existing: student.id !== id, group_name: invite.group_name, course_run_name: invite.course_run_name, csrf_token: await csrfToken(c, session) });
+  }
+  throw new ApiError(503, "CODE_GENERATION_FAILED", "Не удалось создать код. Попробуйте ещё раз");
+});
 
 async function adminMutation(c: any) {
   const session = await requireAdmin(c);
@@ -217,6 +263,24 @@ groupRoutes.post("/admin/groups", zValidator("json", groupSchema), async (c) => 
     }
   }
   throw new ApiError(503, "JOIN_CODE_GENERATION_FAILED", "Не удалось создать код группы");
+});
+
+groupRoutes.post("/admin/groups/:groupId/registration-invites", async (c) => {
+  await adminMutation(c);
+  const group = await c.env.DB.prepare("SELECT id FROM groups WHERE id=?").bind(c.req.param("groupId")).first();
+  if (!group) throw new ApiError(404, "GROUP_NOT_FOUND", "Группа не найдена");
+  const token = randomToken(), timestamp = now(), id = uuid();
+  await c.env.DB.prepare("INSERT INTO group_registration_invites(id,group_id,token_hash,created_at) VALUES(?,?,?,?)")
+    .bind(id, c.req.param("groupId"), await sha256(token), timestamp).run();
+  return c.json({ id, token, created_at: timestamp }, 201);
+});
+
+groupRoutes.delete("/admin/groups/:groupId/registration-invites/:inviteId", async (c) => {
+  await adminMutation(c);
+  const result = await c.env.DB.prepare("UPDATE group_registration_invites SET is_active=0,revoked_at=? WHERE id=? AND group_id=? AND is_active=1")
+    .bind(now(), c.req.param("inviteId"), c.req.param("groupId")).run();
+  if (!result.meta.changes) throw new ApiError(404, "INVITE_NOT_FOUND", "Активная ссылка не найдена");
+  return c.body(null, 204);
 });
 
 groupRoutes.get("/admin/teachers", async (c) => {

@@ -227,6 +227,19 @@ function Register() {
     </Layout>
   );
 }
+function GroupInviteRegister() {
+  const { token = "" } = useParams();
+  const [invite, setInvite] = useState<any>(null), [fio, setFio] = useState(""), [result, setResult] = useState<any>(null), [error, setError] = useState("");
+  useEffect(() => { api(`/api/public/group-registration-invites/${token}`).then(setInvite).catch((cause) => setError(cause.message)); }, [token]);
+  async function submit(event: FormEvent) {
+    event.preventDefault(); setError("");
+    try {
+      const registered = await api(`/api/public/group-registration-invites/${token}/register`, json("POST", { fio }));
+      setCsrf(registered.csrf_token); setResult(registered);
+    } catch (cause) { setError((cause as Error).message); }
+  }
+  return <Layout><section className="card narrow"><p className="eyebrow">Регистрация в группе</p>{invite && <><h1>{invite.course_run_name}</h1><p className="muted">Группа: {invite.group_name}</p></>}{!invite && !error && <p>Проверяем ссылку…</p>}{invite && !result && <form onSubmit={submit}><label>Фамилия Имя Отчество<input value={fio} onChange={(event) => setFio(event.target.value)} required minLength={3} autoComplete="name" /></label><button>Зарегистрироваться и вступить</button></form>}{result && <div className="code-result"><span>{result.existing ? "Ваш прежний код" : "Ваш код студента"}</span><strong>{result.student_code}</strong><button className="secondary" onClick={() => navigator.clipboard.writeText(result.student_code)}>Скопировать</button><Link className="button" to="/profile">Открыть кабинет</Link></div>}<ErrorBox error={error} /></section></Layout>;
+}
 
 function BadgeShowcase({ badges }: { badges: any[] }) {
   if (!badges.length) return <Notice>Здесь пока пусто. Медали и достижения появятся после первого завершённого задания.</Notice>;
@@ -3793,6 +3806,7 @@ function AdminAccess() {
   });
   const [workerName, setWorkerName] = useState("grader-worker"),
     [workerToken, setWorkerToken] = useState("");
+  const [registrationLink, setRegistrationLink] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   async function load() {
@@ -3815,6 +3829,14 @@ function AdminAccess() {
     } catch (e) {
       setError((e as Error).message);
     }
+  }
+  async function createRegistrationLink(groupId: string) {
+    setError("");
+    try {
+      const invite = await api(`/api/admin/groups/${groupId}/registration-invites`, { method: "POST" });
+      const link = `${location.origin}/join/${invite.token}`;
+      setRegistrationLink(link); setNotice("Ссылка регистрации создана. Скопируйте и отправьте студентам.");
+    } catch (cause) { setError((cause as Error).message); }
   }
   return (
     <AdminGuard>
@@ -3892,14 +3914,11 @@ function AdminAccess() {
             </form>
             {groups.map((g) => (
               <div className="access-item" key={g.id}>
-                <strong>
-                  {g.course_run_name} / {g.name}
-                </strong>
-                <span>
-                  {g.kind} · код {g.join_code} · студентов {g.member_count}
-                </span>
+                <span><strong>{g.course_run_name} / {g.name}</strong><small>{g.kind} · код {g.join_code} · студентов {g.member_count}</small></span>
+                <button className="secondary" onClick={() => void createRegistrationLink(g.id)}>Ссылка регистрации</button>
               </div>
             ))}
+            {registrationLink && <div className="code-result"><strong>{registrationLink}</strong><button className="secondary" onClick={() => navigator.clipboard.writeText(registrationLink)}>Скопировать</button></div>}
           </section>
           <div className="admin-section-title" id="teaching-team"><span>2</span><div><h2>Команда и доступ</h2><p>Учётные записи преподавателей и назначение на группы.</p></div></div>
           <section className="card">
@@ -4720,6 +4739,7 @@ export function App() {
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/join/:token" element={<GroupInviteRegister />} />
       <Route path="/profile" element={<StudentProfile />} />
       <Route path="/profile/:section" element={<StudentProfile />} />
       <Route path="/profile/labs/:labId" element={<StudentProfile />} />

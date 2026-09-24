@@ -312,6 +312,58 @@ describe("group foundation and role isolation", () => {
     expect((await response.json() as any).error.code).toBe("INVALID_STUDENT_CREDENTIALS");
   });
 
+  it("registers a student through an opaque group invite exactly once", async () => {
+    const a = await admin(), suffix = crypto.randomUUID().slice(0, 8);
+    const courseResponse = await call("/api/admin/courses", {
+      method: "POST", headers: authHeaders(a), body: JSON.stringify({ title: `Приглашения ${suffix}` }),
+    });
+    expect(courseResponse.status).toBe(201);
+    const course: any = await courseResponse.json();
+    const runResponse = await call("/api/admin/course-runs", {
+      method: "POST", headers: authHeaders(a), body: JSON.stringify({ course_id: course.id, name: `Поток ${suffix}` }),
+    });
+    expect(runResponse.status).toBe(201);
+    const run: any = await runResponse.json();
+    const groupResponse = await call("/api/admin/groups", {
+      method: "POST", headers: authHeaders(a),
+      body: JSON.stringify({ course_run_id: run.id, name: `Группа ${suffix}`, kind: "lecture", join_requests_enabled: false }),
+    });
+    expect(groupResponse.status).toBe(201);
+    const group: any = await groupResponse.json();
+    const inviteResponse = await call(`/api/admin/groups/${group.id}/registration-invites`, {
+      method: "POST", headers: authHeaders(a, false),
+    });
+    expect(inviteResponse.status).toBe(201);
+    const invite: any = await inviteResponse.json();
+    expect(invite.token).toMatch(/^[A-Za-z0-9_-]{32,128}$/);
+    expect((await call(`/api/public/group-registration-invites/${invite.token}`)).status).toBe(200);
+
+    const register = (fio: string) => call(`/api/public/group-registration-invites/${invite.token}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "CF-Connecting-IP": `10.3.0.${studentIp++}` },
+      body: JSON.stringify({ fio }),
+    });
+    const first = await register(`Приглашённый Студент ${suffix}`);
+    expect(first.status).toBe(200);
+    const firstBody: any = await first.json();
+    expect(first.headers.get("set-cookie")).toContain("quiz_student=");
+    const second = await register(`  приглашённый   студент ${suffix} `);
+    expect(second.status).toBe(200);
+    const secondBody: any = await second.json();
+    expect(secondBody.student_code).toBe(firstBody.student_code);
+    const membership = await env.DB.prepare(
+      `SELECT count(*) count FROM group_memberships gm JOIN students s ON s.id=gm.student_id
+       WHERE gm.group_id=? AND s.student_code=?`,
+    ).bind(group.id, firstBody.student_code).first<{ count: number }>();
+    expect(membership?.count).toBe(1);
+
+    expect((await call(`/api/admin/groups/${group.id}/registration-invites/${invite.id}`, {
+      method: "DELETE", headers: authHeaders(a, false),
+    })).status).toBe(204);
+    expect((await call(`/api/public/group-registration-invites/${invite.token}`)).status).toBe(404);
+    expect((await register(`Другой Студент ${suffix}`)).status).toBe(404);
+  });
+
   it("isolates students and teachers despite forged group and request IDs", async () => {
     const a = await admin(), suffix = crypto.randomUUID().slice(0, 8);
     const courseResponse = await call("/api/admin/courses", {
